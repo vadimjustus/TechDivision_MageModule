@@ -19,6 +19,7 @@
  */
 
 namespace TechDivision\MageModule;
+
 use TechDivision\Http\HttpRequestInterface;
 use TechDivision\Http\HttpResponseInterface;
 use TechDivision\Http\HttpResponseStates;
@@ -126,9 +127,9 @@ class MageModule implements ModuleInterface
     /**
      * Implement's module logic for given hook
      *
-     * @param \TechDivision\Http\HttpRequestInterface $request The request object
+     * @param \TechDivision\Http\HttpRequestInterface  $request  The request object
      * @param \TechDivision\Http\HttpResponseInterface $response The response object
-     * @param int $hook The current hook to process logic for
+     * @param int                                      $hook     The current hook to process logic for
      *
      * @throws \TechDivision\Server\Exceptions\ModuleException
      * @return bool
