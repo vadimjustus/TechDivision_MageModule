@@ -21,7 +21,13 @@
 namespace TechDivision\MageModule;
 use TechDivision\Http\HttpRequestInterface;
 use TechDivision\Http\HttpResponseInterface;
+use TechDivision\Http\HttpResponseStates;
+use TechDivision\PhpModule\PhpModule;
+use TechDivision\Server\Dictionaries\ModuleHooks;
+use TechDivision\Server\Dictionaries\ServerVars;
 use TechDivision\Server\Exceptions\ModuleException;
+use TechDivision\Server\Interfaces\ModuleInterface;
+use TechDivision\Server\Interfaces\ServerContextInterface;
 
 /**
  * Class PhpModule
@@ -152,7 +158,7 @@ class MageModule implements ModuleInterface
             $this->prepareServerVars();
 
             // initialize the globals $_SERVER, $_REQUEST, $_POST, $_GET, $_COOKIE, $_FILES and set the headers
-            $this->initGlobals();
+            // $this->initGlobals();
 
             // start new php process
             /*
@@ -194,7 +200,7 @@ class MageModule implements ModuleInterface
         if ($serverContext->hasServerVar(ServerVars::PATH_INFO)) {
             $phpSelf .= $serverContext->getServerVar(ServerVars::PATH_INFO);
         }
-        $serverContext->setServerVar(self::SERVER_VAR_PHP_SELF, $phpSelf);
+        $serverContext->setServerVar(PhpModule::SERVER_VAR_PHP_SELF, $phpSelf);
     }
 
     /**
