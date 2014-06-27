@@ -31,16 +31,16 @@ use TechDivision\Server\Interfaces\ModuleInterface;
 use TechDivision\Server\Interfaces\ServerContextInterface;
 
 /**
- * Class PhpModule
+ * Class MageModule
  *
  * @category  Webserver
  * @package   TechDivision_MageModule
  * @author    Johann Zelger <jz@techdivision.com>
  * @copyright 2014 TechDivision GmbH <info@techdivision.com>
  * @license   http://opensource.org/licenses/osl-3.0.php Open Software License (OSL 3.0)
- * @link      https://github.com/techdivision/TechDivision_PhpModule
+ * @link      https://github.com/techdivision/TechDivision_MageModule
  */
-class MageModule implements ModuleInterface
+class MageModule extends PhpModule implements ModuleInterface
 {
     /**
      * Defines the module name
@@ -70,6 +70,8 @@ class MageModule implements ModuleInterface
      */
     protected $response;
 
+    protected $mageWorker = array();
+
     /**
      * Initiates the module
      *
@@ -81,6 +83,12 @@ class MageModule implements ModuleInterface
     public function init(ServerContextInterface $serverContext)
     {
         $this->serverContext = $serverContext;
+
+        // start magento worker
+        for ($i=1; $i<=32; $i++) {
+            echo "Starting AppWorker #$i" . PHP_EOL;
+            $this->mageWorker[$i] = new AppWorker('\TechDivision\MageModule\App');
+        }
     }
 
     /**
@@ -121,7 +129,7 @@ class MageModule implements ModuleInterface
      */
     public function prepare()
     {
-        // nothing to prepare for this module
+
     }
 
     /**
@@ -152,36 +160,34 @@ class MageModule implements ModuleInterface
         // get server context to local var
         $serverContext = $this->getServerContext();
 
+
         // check if server handler sais php modules should react on this request as file handler
         if ($serverContext->getServerVar(ServerVars::SERVER_HANDLER) === self::MODULE_NAME) {
 
-            // prepare modules specific server vars
-            $this->prepareServerVars();
+            foreach ($this->mageWorker as $mageWorker) {
+                if ($mageWorker->outputBuffer === null) {
+                    $worker = $mageWorker;
+                    break;
+                }
+            }
 
-            // initialize the globals $_SERVER, $_REQUEST, $_POST, $_GET, $_COOKIE, $_FILES and set the headers
-            // $this->initGlobals();
+            // create new response stackable
+            $responseStack = new ResponseStack();
 
-            // start new php process
-            /*
-            $process = new PhpProcessThread(
-                $scriptFilename,
-                $this->globals,
-                $this->uploadedFiles
-            );
+            $worker->handle($responseStack);
 
+            while (strlen($responseStack->body) === 0) {
+                usleep(1);
+            }
 
-            // start process
-            $process->start(PTHREADS_INHERIT_ALL | PTHREADS_ALLOW_HEADERS);
-            // wait for process to finish
-            $process->join();
+            foreach (appserver_get_headers(true) as $resHeader) {
+                list($resHeaderKey, $resHeaderValue) = explode(': ', $resHeader);
+                $response->addHeader($resHeaderKey, $resHeaderValue);
+            }
 
-            // prepare response
-            $this->prepareResponse();
+            $response->setStatusCode(appserver_get_http_response_code());
 
-            */
-
-            // store the file's contents in the response
-            $response->appendBodyStream('mageModule was here');
+            $response->appendBodyStream($responseStack->body);
 
             // set response state to be dispatched after this without calling other modules process
             $response->setState(HttpResponseStates::DISPATCH);
@@ -235,6 +241,6 @@ class MageModule implements ModuleInterface
      */
     public function shutdown(HttpRequestInterface $request, HttpResponseInterface $response)
     {
-        // nothing yes for shutdown
+
     }
 }
