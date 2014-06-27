@@ -1,15 +1,50 @@
 <?php
+/**
+ * magevm
+ *
+ * NOTICE OF LICENSE
+ *
+ * This source file is subject to the Open Software License (OSL 3.0)
+ * that is available through the world-wide-web at this URL:
+ * http://opensource.org/licenses/osl-3.0.php
+ *
+ * PHP version 5
+ *
+ * @category  Webserver
+ * @package   TechDivision_MageModule
+ * @author    Johann Zelger <jz@techdivision.com>
+ * @copyright 2014 TechDivision GmbH <info@techdivision.com>
+ * @license   http://opensource.org/licenses/osl-3.0.php Open Software License (OSL 3.0)
+ * @link      https://github.com/techdivision/TechDivision_MageModule
+ */
+
+namespace magevm;
 
 define('BASEDIR', __DIR__ . DIRECTORY_SEPARATOR);
 define('AUTOLOADER', '/opt/appserver/app/code' . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php');
 
 use \TechDivision\Server\Sockets\StreamSocket;
 
+/**
+ * Class MageWorker
+ *
+ * @category  Webserver
+ * @package   TechDivision_MageModule
+ * @author    Johann Zelger <jz@techdivision.com>
+ * @copyright 2014 TechDivision GmbH <info@techdivision.com>
+ * @license   http://opensource.org/licenses/osl-3.0.php Open Software License (OSL 3.0)
+ * @link      https://github.com/techdivision/TechDivision_MageModule
+ */
 class MageWorker extends \Thread
 {
 
     protected $connectionResource;
 
+    /**
+     * Constructor
+     *
+     * @param resource $connectionResource The connection resource
+     */
     public function __construct($connectionResource)
     {
         $this->connectionResource = $connectionResource;
@@ -18,6 +53,8 @@ class MageWorker extends \Thread
 
     /**
      * Runs the vm
+     *
+     * @return void
      */
     public function run()
     {
@@ -158,7 +195,7 @@ class MageWorker extends \Thread
                     list($httpMethod, $httpUri, $httpProtocol) = explode(' ', $client->readLine());
                     // readin headers
                     $headers = array();
-                    while(($line = $client->readLine()) !== "\r\n") {
+                    while (($line = $client->readLine()) !== "\r\n") {
                         list($headerKey, $headerValue) = explode(': ', trim($line));
                         $headers[$headerKey] = $headerValue;
                     }
@@ -184,8 +221,8 @@ class MageWorker extends \Thread
 
                         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
 
-                        $appRequest = new Mage_Core_Controller_Request_Http();
-                        $appResponse = new Mage_Core_Controller_Response_Http();
+                        $appRequest = new \Mage_Core_Controller_Request_Http();
+                        $appResponse = new \Mage_Core_Controller_Response_Http();
                         $appRequest->setRequestUri($httpUri);
 
                         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
@@ -242,8 +279,7 @@ class MageWorker extends \Thread
                 $client->write($e);
                 $client->close();
             }
-
-        } while(1);
+        } while (1);
     }
 }
 
