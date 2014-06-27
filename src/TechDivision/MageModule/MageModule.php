@@ -121,7 +121,7 @@ class MageModule implements ModuleInterface
      */
     public function prepare()
     {
-        // nothing to prepare for this module
+        error_log(__METHOD__);
     }
 
     /**
@@ -155,33 +155,146 @@ class MageModule implements ModuleInterface
         // check if server handler sais php modules should react on this request as file handler
         if ($serverContext->getServerVar(ServerVars::SERVER_HANDLER) === self::MODULE_NAME) {
 
-            // prepare modules specific server vars
-            $this->prepareServerVars();
+            if (!class_exists('\Mage')) {
 
-            // initialize the globals $_SERVER, $_REQUEST, $_POST, $_GET, $_COOKIE, $_FILES and set the headers
-            // $this->initGlobals();
+                error_log(__METHOD__ . ':' . __LINE__);
 
-            // start new php process
-            /*
-            $process = new PhpProcessThread(
-                $scriptFilename,
-                $this->globals,
-                $this->uploadedFiles
+                // set server var for magento request handling
+                $_SERVER = array();
+                $_SERVER["REQUEST_URI"] = "/index.php";
+                $_SERVER["SCRIPT_NAME"] = "/index.php";
+                $_SERVER["SCRIPT_FILENAME"] = "/var/www/magento/index.php";
+                $_SERVER["HTTP_HOST"] = "magento.local:9080";
+
+                require '/var/www/magento/app/Mage.php';
+
+                appserver_set_headers_sent(false);
+                $magentoApp = \Mage::app();
+                ob_start();
+                $magentoApp->run(array(
+                    'scope_code' => 'default',
+                    'scope_type' => 'store',
+                    'options'    => array(),
+                ));
+                ob_end_clean();
+
+            } else {
+                $startTime = microtime(true);
+                $magentoApp = \Mage::app();
+                error_log('\Mage:app() took: ' . microtime(true) - $startTime);
+            }
+
+            // the registry keys to clean after every magento app request
+            $registryCleanKeys = array(
+                'application_params',
+                'current_category',
+                'current_product',
+                '_singleton/core/layout',
+                'current_entity_key',
+                '_singleton/core/resource',
+                '_resource_singleton/core/website',
+                '_resource_singleton/core/store_group',
+                '_resource_singleton/core/store',
+                '_resource_helper/core',
+                '_singleton/core/cookie',
+                'controller',
+                '_singleton/Mage_Cms_Controller_Router',
+                '_singleton/core/factory',
+                '_resource_singleton/core/url_rewrite',
+                '_helper/core/http',
+                '_singleton/core/session',
+                '_singleton/core/design_package',
+                '_singleton/core/design',
+                '_resource_singleton/core/design',
+                '_singleton/core/translate',
+                '_singleton/core/locale',
+                '_singleton/core/translate_inline',
+                '_singleton/xmlconnect/observer',
+                '_helper/core/string',
+                '_singleton/log/visitor',
+                '_resource_singleton/log/visitor',
+                '_singleton/pagecache/observer',
+                '_helper/pagecache',
+                '_singleton/persistent/observer',
+                '_helper/persistent',
+                '_helper/persistent/session',
+                '_resource_singleton/persistent/session',
+                '_singleton/persistent/observer_session',
+                '_singleton/customer/session',
+                '_helper/cms/page',
+                '_singleton/cms/page',
+                '_resource_singleton/cms/page',
+                '_helper/page/layout',
+                '_helper/page',
+                '_singleton/customer/observer',
+                '_helper/customer',
+                '_helper/catalog',
+                '_helper/catalog/map',
+                '_helper/catalogsearch',
+                '_helper/core',
+                '_helper/checkout/cart',
+                '_singleton/checkout/cart',
+                '_singleton/checkout/session',
+                '_helper/checkout',
+                '_helper/contacts',
+                '_singleton/catalog/session',
+                '_helper/core/file_storage_database',
+                '_helper/core/js',
+                '_helper/directory',
+                '_helper/googleanalytics',
+                '_helper/adminhtml',
+                '_helper/widget',
+                '_helper/wishlist',
+                '_helper/cms',
+                '_helper/catalog/product_compare',
+                '_singleton/reports/session',
+                '_resource_singleton/reports/product_index_viewed',
+                '_helper/catalog/product_flat',
+                '_resource_singleton/eav/entity_type',
+                '_resource_singleton/catalog/product',
+                '_singleton/catalog/factory',
+                '_singleton/catalog/product_visibility',
+                '_resource_singleton/reports/product_index_compared',
+                '_resource_singleton/poll/poll',
+                '_resource_singleton/poll/poll_answer',
+                '_helper/paypal',
+                '_helper/core/cookie',
+                '_singleton/core/url',
+                '_singleton/core/date'
             );
 
+            // cleanup mage registry
+            foreach ($registryCleanKeys as $registryCleanKey) {
+                \Mage::unregister($registryCleanKey);
+            }
 
-            // start process
-            $process->start(PTHREADS_INHERIT_ALL | PTHREADS_ALLOW_HEADERS);
-            // wait for process to finish
-            $process->join();
+            $appRequest = new \Mage_Core_Controller_Request_Http();
+            $appResponse = new \Mage_Core_Controller_Response_Http();
+            $appRequest->setRequestUri($request->getUri());
 
-            // prepare response
-            $this->prepareResponse();
+            $magentoApp->setRequest($appRequest);
+            $magentoApp->setResponse($appResponse);
 
-            */
+            ob_start();
 
-            // store the file's contents in the response
-            $response->appendBodyStream('mageModule was here');
+            appserver_set_headers_sent(false);
+
+            $magentoApp->run(array(
+                'scope_code' => 'default',
+                'scope_type' => 'store',
+                'options'    => array(),
+            ));
+
+            foreach (appserver_get_headers(true) as $resHeader) {
+                list($resHeaderKey, $resHeaderValue) = explode(': ', $resHeader);
+                $response->addHeader($resHeaderKey, $resHeaderValue);
+            }
+
+            $response->setStatusCode(appserver_get_http_response_code());
+
+            $response->appendBodyStream(ob_get_contents());
+
+            ob_end_clean();
 
             // set response state to be dispatched after this without calling other modules process
             $response->setState(HttpResponseStates::DISPATCH);
@@ -235,6 +348,93 @@ class MageModule implements ModuleInterface
      */
     public function shutdown(HttpRequestInterface $request, HttpResponseInterface $response)
     {
-        // nothing yes for shutdown
+        error_log(__METHOD__);
+    }
+
+    public function clearRegistry()
+    {
+        // the registry keys to clean after every magento app request
+        $registryCleanKeys = array(
+            'application_params',
+            'current_category',
+            'current_product',
+            '_singleton/core/layout',
+            'current_entity_key',
+            '_singleton/core/resource',
+            '_resource_singleton/core/website',
+            '_resource_singleton/core/store_group',
+            '_resource_singleton/core/store',
+            '_resource_helper/core',
+            '_singleton/core/cookie',
+            'controller',
+            '_singleton/Mage_Cms_Controller_Router',
+            '_singleton/core/factory',
+            '_resource_singleton/core/url_rewrite',
+            '_helper/core/http',
+            '_singleton/core/session',
+            '_singleton/core/design_package',
+            '_singleton/core/design',
+            '_resource_singleton/core/design',
+            '_singleton/core/translate',
+            '_singleton/core/locale',
+            '_singleton/core/translate_inline',
+            '_singleton/xmlconnect/observer',
+            '_helper/core/string',
+            '_singleton/log/visitor',
+            '_resource_singleton/log/visitor',
+            '_singleton/pagecache/observer',
+            '_helper/pagecache',
+            '_singleton/persistent/observer',
+            '_helper/persistent',
+            '_helper/persistent/session',
+            '_resource_singleton/persistent/session',
+            '_singleton/persistent/observer_session',
+            '_singleton/customer/session',
+            '_helper/cms/page',
+            '_singleton/cms/page',
+            '_resource_singleton/cms/page',
+            '_helper/page/layout',
+            '_helper/page',
+            '_singleton/customer/observer',
+            '_helper/customer',
+            '_helper/catalog',
+            '_helper/catalog/map',
+            '_helper/catalogsearch',
+            '_helper/core',
+            '_helper/checkout/cart',
+            '_singleton/checkout/cart',
+            '_singleton/checkout/session',
+            '_helper/checkout',
+            '_helper/contacts',
+            '_singleton/catalog/session',
+            '_helper/core/file_storage_database',
+            '_helper/core/js',
+            '_helper/directory',
+            '_helper/googleanalytics',
+            '_helper/adminhtml',
+            '_helper/widget',
+            '_helper/wishlist',
+            '_helper/cms',
+            '_helper/catalog/product_compare',
+            '_singleton/reports/session',
+            '_resource_singleton/reports/product_index_viewed',
+            '_helper/catalog/product_flat',
+            '_resource_singleton/eav/entity_type',
+            '_resource_singleton/catalog/product',
+            '_singleton/catalog/factory',
+            '_singleton/catalog/product_visibility',
+            '_resource_singleton/reports/product_index_compared',
+            '_resource_singleton/poll/poll',
+            '_resource_singleton/poll/poll_answer',
+            '_helper/paypal',
+            '_helper/core/cookie',
+            '_singleton/core/url',
+            '_singleton/core/date'
+        );
+
+        // cleanup mage registry
+        foreach ($registryCleanKeys as $registryCleanKey) {
+            \Mage::unregister($registryCleanKey);
+        }
     }
 }
