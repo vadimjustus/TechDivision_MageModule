@@ -52,12 +52,71 @@ class MageWorker extends \Thread
     }
 
     /**
+     * Parse raw HTTP request data
+     *
+     * Pass in $a_data as an array. This is done by reference to avoid copying
+     * the data around too much.
+     *
+     * Any files found in the request will be added by their field name to the
+     * $data['files'] array.
+     *
+     * @param array  $a_data Empty array to fill with data
+     * @param string $input
+     *
+     * @param array  $headers
+     *
+     * @return  array  Associative array of request data
+     *
+     * @link http://www.chlab.ch/blog/archives/php/manually-parse-raw-http-data-php
+     */
+    protected function parse_raw_http_request(array &$a_data, $input, $headers)
+    {
+        // grab multipart boundary from content type header
+        preg_match('/boundary=(.*)$/', $headers['Content-Type'], $matches);
+
+        // content type is probably regular form-encoded
+        if (!count($matches)) {
+            // we expect regular puts to containt a query string containing data
+            parse_str(urldecode($input), $a_data);
+            return $a_data;
+        }
+
+        $boundary = $matches[1];
+
+        // split content by boundary and get rid of last -- element
+        $a_blocks = preg_split("/-+$boundary/", $input);
+        array_pop($a_blocks);
+
+        // loop data blocks
+        foreach ($a_blocks as $id => $block) {
+            if (empty($block)) {
+                continue;
+            }
+
+            // you'll have to var_dump $block to understand this and maybe replace \n or \r with a visibile char
+
+            // parse uploaded files
+            if (strpos($block, 'application/octet-stream') !== false) {
+                // match "name", then everything after "stream" (optional) except for prepending newlines
+                preg_match("/name=\"([^\"]*)\".*stream[\n|\r]+([^\n\r].*)?$/s", $block, $matches);
+                $a_data['files'][$matches[1]] = $matches[2];
+            } // parse all other fields
+            else {
+                // match "name" and optional value in between newline sequences
+                preg_match('/name=\"([^\"]*)\"[\n|\r]+([^\n\r].*)?\r$/s', $block, $matches);
+                $a_data[$matches[1]] = $matches[2];
+            }
+        }
+    }
+
+    /**
      * Runs the vm
      *
      * @return void
      */
     public function run()
     {
+
         /*
         $ctx = new ZMQContext();
         //  First allow 0MQ to set the identity
@@ -70,11 +129,11 @@ class MageWorker extends \Thread
         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
 
         // set server var for magento request handling
-        $_SERVER = array();
-        $_SERVER["REQUEST_URI"] = "/index.php";
-        $_SERVER["SCRIPT_NAME"] = "/index.php";
+        $_SERVER                    = array();
+        $_SERVER["REQUEST_URI"]     = "/index.php";
+        $_SERVER["SCRIPT_NAME"]     = "/index.php";
         $_SERVER["SCRIPT_FILENAME"] = "/var/www/magento/index.php";
-        $_SERVER["HTTP_HOST"] = "magento.local:9080";
+        $_SERVER["HTTP_HOST"]       = "magento.local:9080";
 
         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
 
@@ -86,11 +145,13 @@ class MageWorker extends \Thread
         appserver_set_headers_sent(false);
         $magentoApp = \Mage::app();
         ob_start();
-        $magentoApp->run(array(
-            'scope_code' => 'default',
-            'scope_type' => 'store',
-            'options'    => array(),
-        ));
+        $magentoApp->run(
+            array(
+                 'scope_code' => 'default',
+                 'scope_type' => 'store',
+                 'options'    => array(),
+            )
+        );
         ob_end_clean();
 
         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
@@ -101,84 +162,13 @@ class MageWorker extends \Thread
 
         // go for a loop while accepting clients
         do {
-            // the registry keys to clean after every magento app request
-            $registryCleanKeys = array(
-                'application_params',
-                'current_category',
-                'current_product',
-                '_singleton/core/layout',
-                'current_entity_key',
-                '_singleton/core/resource',
-                '_resource_singleton/core/website',
-                '_resource_singleton/core/store_group',
-                '_resource_singleton/core/store',
-                '_resource_helper/core',
-                '_singleton/core/cookie',
-                'controller',
-                '_singleton/Mage_Cms_Controller_Router',
-                '_singleton/core/factory',
-                '_resource_singleton/core/url_rewrite',
-                '_helper/core/http',
-                '_singleton/core/session',
-                '_singleton/core/design_package',
-                '_singleton/core/design',
-                '_resource_singleton/core/design',
-                '_singleton/core/translate',
-                '_singleton/core/locale',
-                '_singleton/core/translate_inline',
-                '_singleton/xmlconnect/observer',
-                '_helper/core/string',
-                '_singleton/log/visitor',
-                '_resource_singleton/log/visitor',
-                '_singleton/pagecache/observer',
-                '_helper/pagecache',
-                '_singleton/persistent/observer',
-                '_helper/persistent',
-                '_helper/persistent/session',
-                '_resource_singleton/persistent/session',
-                '_singleton/persistent/observer_session',
-                '_singleton/customer/session',
-                '_helper/cms/page',
-                '_singleton/cms/page',
-                '_resource_singleton/cms/page',
-                '_helper/page/layout',
-                '_helper/page',
-                '_singleton/customer/observer',
-                '_helper/customer',
-                '_helper/catalog',
-                '_helper/catalog/map',
-                '_helper/catalogsearch',
-                '_helper/core',
-                '_helper/checkout/cart',
-                '_singleton/checkout/cart',
-                '_singleton/checkout/session',
-                '_helper/checkout',
-                '_helper/contacts',
-                '_singleton/catalog/session',
-                '_helper/core/file_storage_database',
-                '_helper/core/js',
-                '_helper/directory',
-                '_helper/googleanalytics',
-                '_helper/adminhtml',
-                '_helper/widget',
-                '_helper/wishlist',
-                '_helper/cms',
-                '_helper/catalog/product_compare',
-                '_singleton/reports/session',
-                '_resource_singleton/reports/product_index_viewed',
-                '_helper/catalog/product_flat',
-                '_resource_singleton/eav/entity_type',
-                '_resource_singleton/catalog/product',
-                '_singleton/catalog/factory',
-                '_singleton/catalog/product_visibility',
-                '_resource_singleton/reports/product_index_compared',
-                '_resource_singleton/poll/poll',
-                '_resource_singleton/poll/poll_answer',
-                '_helper/paypal',
-                '_helper/core/cookie',
-                '_singleton/core/url',
-                '_singleton/core/date'
-            );
+            // the registry keys to preserve from cleaning up after every magento app request
+            $registryPreserveKeys = array();
+
+            $reflect = new \ReflectionClass('\Mage');
+            $props   = $reflect->getStaticProperties();
+
+            $registryCleanKeys = array_keys($props['_registry']);
 
             // cleanup mage registry
             foreach ($registryCleanKeys as $registryCleanKey) {
@@ -193,6 +183,10 @@ class MageWorker extends \Thread
 
                     // read socket for dummy
                     list($httpMethod, $httpUri, $httpProtocol) = explode(' ', $client->readLine());
+
+                    // update the request method in the global $_SERVER var
+                    $_SERVER['REQUEST_METHOD'] = $httpMethod;
+
                     // readin headers
                     $headers = array();
                     while (($line = $client->readLine()) !== "\r\n") {
@@ -207,6 +201,7 @@ class MageWorker extends \Thread
                             $_COOKIE[$key] = $value;
                         }
                     }
+                    echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
 
                     if (strpos($httpUri, '/index.php') === false) {
                         // output serving static content
@@ -215,13 +210,18 @@ class MageWorker extends \Thread
                         if ($httpMethod === 'POST') {
                             if (isset($headers['Content-Length'])) {
                                 $bodyContent = $client->read($headers['Content-Length']);
-                                parse_str(urldecode($bodyContent), $_POST);
+
+                                if (strpos($headers['Content-Type'], 'multipart/form-data') !== false) {
+                                    $this->parse_raw_http_request($_POST, $bodyContent, $headers);
+                                } else {
+                                    parse_str(urldecode($bodyContent), $_POST);
+                                }
                             }
                         }
 
                         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
 
-                        $appRequest = new \Mage_Core_Controller_Request_Http();
+                        $appRequest  = new \Mage_Core_Controller_Request_Http();
                         $appResponse = new \Mage_Core_Controller_Response_Http();
                         $appRequest->setRequestUri($httpUri);
 
@@ -234,29 +234,31 @@ class MageWorker extends \Thread
 
                         appserver_set_headers_sent(false);
 
-                        echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
+                        //echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
 
-                        $magentoApp->run(array(
-                            'scope_code' => 'default',
-                            'scope_type' => 'store',
-                            'options'    => array(),
-                        ));
+                        $magentoApp->run(
+                            array(
+                                 'scope_code' => 'default',
+                                 'scope_type' => 'store',
+                                 'options'    => array(),
+                            )
+                        );
 
-                        echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
+                        //echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
 
                         // build up res headers
                         $resHeaders = array(
-                            "Server" => "MageServer/0.1.0 (PHP 5.5.10)",
-                            "Connection" => "Close",
+                            "Server"         => "MageServer/0.1.0 (PHP 5.5.10)",
+                            "Connection"     => "Close",
                             "Content-Length" => ob_get_length(),
-                            "X-Powered-By" => "MageWorker",
-                            "Expires" => "Thu, 19 Nov 1981 08:52:00 GMT",
-                            "Cache-Control" => "no-store, no-cache, must-revalidate, post-check=0, pre-check=0",
-                            "Pragma" => "no-cache",
-                            "Content-Type" => "text/html; charset=UTF-8",
-                            "Date" => "Sat, 17 May 14 16:44:40 +0000"
+                            "X-Powered-By"   => "MageWorker",
+                            "Expires"        => "Thu, 19 Nov 1981 08:52:00 GMT",
+                            "Cache-Control"  => "no-store, no-cache, must-revalidate, post-check=0, pre-check=0",
+                            "Pragma"         => "no-cache",
+                            "Content-Type"   => "text/html; charset=UTF-8",
+                            "Date"           => "Sat, 17 May 14 16:44:40 +0000"
                         );
-                        $headerStr = '';
+                        $headerStr  = '';
                         foreach (appserver_get_headers(true) as $resHeader) {
                             list($resHeaderKey, $resHeaderValue) = explode(': ', $resHeader);
                             $resHeaders[$resHeaderKey] = $resHeaderValue;
@@ -273,7 +275,8 @@ class MageWorker extends \Thread
                         ob_end_clean();
                     }
 
-                     $client->close();
+                    echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
+                    $client->close();
 
                     session_write_close();
 
@@ -303,7 +306,7 @@ $com->bind("ipc://com");
 
 // start mage workers
 $mageWorker = array();
-for ($i=1; $i<=4; $i++) {
+for ($i = 1; $i <= 4; $i++) {
     echo "Starting MageWorker #$i" . PHP_EOL;
     $mageWorker[$i] = new MageWorker($serverConnection->getConnectionResource());
 }
