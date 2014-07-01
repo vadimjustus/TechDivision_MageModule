@@ -79,16 +79,24 @@ class AppWorker extends \Thread
         // instantiate new app
         $app = new $this->appType();
 
+        $this->handleRequest = false;
 
         do {
-            // wait for request to work on
-            $this->wait();
+            if ($this->handleRequest === false) {
+                // wait for request to work on
+                $this->wait();
+            }
+
+            $this->handleRequest = true;
 
             // notify the app to do something
             $app->handle($this, $this->response);
 
             // let itself wait for the app to be ready
             $this->wait();
+
+            $this->handleRequest = false;
+
 
         } while (true);
     }

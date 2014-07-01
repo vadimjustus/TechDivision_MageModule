@@ -110,13 +110,18 @@ class App extends \Thread
             ob_start();
 
             // run the app itself
+            $reflection = new \ReflectionClass('\Mage');
+            $props = $reflection->getStaticProperties();
+            $mageRegistryKeys = array_keys($props['_registry']);
 
             // the registry keys to clean after every magento app request
-            $registryCleanKeys = array('application_params','current_category','current_product','_singleton/core/layout');
+            $mageRegistryClearKeys = array('');
 
             // cleanup mage registry
-            foreach ($registryCleanKeys as $registryCleanKey) {
-                \Mage::unregister($registryCleanKey);
+            foreach ($mageRegistryKeys as $mageRegistryKey) {
+                if (!in_array($mageRegistryKey, $mageRegistryClearKeys)) {
+                    \Mage::unregister($mageRegistryKey);
+                }
             }
 
             // setup app request and response
@@ -145,6 +150,10 @@ class App extends \Thread
 
             // end and clean output buffering
             ob_end_clean();
+
+            session_write_close();
+
+            appserver_session_init();
 
         } while (true);
     }

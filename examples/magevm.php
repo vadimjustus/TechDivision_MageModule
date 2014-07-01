@@ -274,6 +274,10 @@ class MageWorker extends \Thread
                     }
 
                      $client->close();
+
+                    session_write_close();
+
+                    appserver_session_init();
                 }
             } catch (\Exception $e) {
                 $client->write($e);
@@ -299,7 +303,7 @@ $com->bind("ipc://com");
 
 // start mage workers
 $mageWorker = array();
-for ($i=1; $i<=8; $i++) {
+for ($i=1; $i<=4; $i++) {
     echo "Starting MageWorker #$i" . PHP_EOL;
     $mageWorker[$i] = new MageWorker($serverConnection->getConnectionResource());
 }
