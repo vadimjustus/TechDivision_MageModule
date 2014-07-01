@@ -85,7 +85,7 @@ class MageModule extends PhpModule implements ModuleInterface
         $this->serverContext = $serverContext;
 
         // start magento worker
-        for ($i=1; $i<=32; $i++) {
+        for ($i=1; $i<=4; $i++) {
             echo "Starting AppWorker #$i" . PHP_EOL;
             $this->mageWorker[$i] = new AppWorker('\TechDivision\MageModule\App');
         }
@@ -164,17 +164,16 @@ class MageModule extends PhpModule implements ModuleInterface
         // check if server handler sais php modules should react on this request as file handler
         if ($serverContext->getServerVar(ServerVars::SERVER_HANDLER) === self::MODULE_NAME) {
 
-            foreach ($this->mageWorker as $mageWorker) {
-                if ($mageWorker->outputBuffer === null) {
-                    $worker = $mageWorker;
-                    break;
-                }
-            }
-
             // create new response stackable
             $responseStack = new ResponseStack();
 
-            $worker->handle($responseStack);
+            foreach ($this->mageWorker as $mageWorker) {
+                if ($mageWorker->handleRequest === false) {
+                    $worker = $mageWorker;
+                    $worker->handle($responseStack);
+                    break;
+                }
+            }
 
             while (strlen($responseStack->body) === 0) {
                 usleep(1);
