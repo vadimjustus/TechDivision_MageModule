@@ -70,11 +70,11 @@ class MageWorker extends \Thread
         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
 
         // set server var for magento request handling
-        $_SERVER = array();
-        $_SERVER["REQUEST_URI"] = "/index.php";
-        $_SERVER["SCRIPT_NAME"] = "/index.php";
+        $_SERVER                    = array();
+        $_SERVER["REQUEST_URI"]     = "/index.php";
+        $_SERVER["SCRIPT_NAME"]     = "/index.php";
         $_SERVER["SCRIPT_FILENAME"] = "/var/www/magento/index.php";
-        $_SERVER["HTTP_HOST"] = "magento.local:9080";
+        $_SERVER["HTTP_HOST"]       = "magento.local:9080";
 
         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
 
@@ -86,11 +86,13 @@ class MageWorker extends \Thread
         appserver_set_headers_sent(false);
         $magentoApp = \Mage::app();
         ob_start();
-        $magentoApp->run(array(
-                              'scope_code' => 'default',
-                              'scope_type' => 'store',
-                              'options'    => array(),
-                         ));
+        $magentoApp->run(
+            array(
+                 'scope_code' => 'default',
+                 'scope_type' => 'store',
+                 'options'    => array(),
+            )
+        );
         ob_end_clean();
 
         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
@@ -221,7 +223,7 @@ class MageWorker extends \Thread
 
                         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
 
-                        $appRequest = new \Mage_Core_Controller_Request_Http();
+                        $appRequest  = new \Mage_Core_Controller_Request_Http();
                         $appResponse = new \Mage_Core_Controller_Response_Http();
                         $appRequest->setRequestUri($httpUri);
 
@@ -236,27 +238,29 @@ class MageWorker extends \Thread
 
                         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
 
-                        $magentoApp->run(array(
-                                              'scope_code' => 'default',
-                                              'scope_type' => 'store',
-                                              'options'    => array(),
-                                         ));
+                        $magentoApp->run(
+                            array(
+                                 'scope_code' => 'default',
+                                 'scope_type' => 'store',
+                                 'options'    => array(),
+                            )
+                        );
 
                         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
 
                         // build up res headers
                         $resHeaders = array(
-                            "Server" => "MageServer/0.1.0 (PHP 5.5.10)",
-                            "Connection" => "Close",
+                            "Server"         => "MageServer/0.1.0 (PHP 5.5.10)",
+                            "Connection"     => "Close",
                             "Content-Length" => ob_get_length(),
-                            "X-Powered-By" => "MageWorker",
-                            "Expires" => "Thu, 19 Nov 1981 08:52:00 GMT",
-                            "Cache-Control" => "no-store, no-cache, must-revalidate, post-check=0, pre-check=0",
-                            "Pragma" => "no-cache",
-                            "Content-Type" => "text/html; charset=UTF-8",
-                            "Date" => "Sat, 17 May 14 16:44:40 +0000"
+                            "X-Powered-By"   => "MageWorker",
+                            "Expires"        => "Thu, 19 Nov 1981 08:52:00 GMT",
+                            "Cache-Control"  => "no-store, no-cache, must-revalidate, post-check=0, pre-check=0",
+                            "Pragma"         => "no-cache",
+                            "Content-Type"   => "text/html; charset=UTF-8",
+                            "Date"           => "Sat, 17 May 14 16:44:40 +0000"
                         );
-                        $headerStr = '';
+                        $headerStr  = '';
                         foreach (appserver_get_headers(true) as $resHeader) {
                             list($resHeaderKey, $resHeaderValue) = explode(': ', $resHeader);
                             $resHeaders[$resHeaderKey] = $resHeaderValue;
@@ -303,7 +307,7 @@ $com->bind("ipc://com");
 
 // start mage workers
 $mageWorker = array();
-for ($i=1; $i<=4; $i++) {
+for ($i = 1; $i <= 4; $i++) {
     echo "Starting MageWorker #$i" . PHP_EOL;
     $mageWorker[$i] = new MageWorker($serverConnection->getConnectionResource());
 }
