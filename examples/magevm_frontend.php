@@ -25,8 +25,6 @@ define('BASEDIR', __DIR__ . DIRECTORY_SEPARATOR);
 define('AUTOLOADER', '/opt/appserver/app/code' . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php');
 define('WEBROOT', '/var/www/magevm/');
 
-require_once 'app.php';
-
 use \TechDivision\Server\Sockets\StreamSocket;
 
 /**
@@ -44,9 +42,6 @@ class MageWorker extends \Thread
 
     protected $connectionResource;
 
-    /** @var  app */
-    protected $app;
-
     /**
      * Constructor
      *
@@ -56,24 +51,6 @@ class MageWorker extends \Thread
     {
         $this->connectionResource = $connectionResource;
         $this->start(PTHREADS_INHERIT_ALL | PTHREADS_ALLOW_HEADERS);
-        $this->setApp(new app());
-        //$this->run();
-    }
-
-    /**
-     * @param app $app
-     */
-    public function setApp(app $app)
-    {
-        $this->app = $app;
-    }
-
-    /**
-     * @return app
-     */
-    public function getApp()
-    {
-        return $this->app;
     }
 
     /**
@@ -141,19 +118,6 @@ class MageWorker extends \Thread
      */
     public function run()
     {
-
-
-        /*
-        $ctx = new ZMQContext();
-        //  First allow 0MQ to set the identity
-        $com = new ZMQSocket($ctx, ZMQ::SOCKET_REQ);
-        $com->connect("ipc://com");
-
-        $com->send('Running Thread "' . __CLASS__ .'" #' . $this->getThreadId());
-        */
-
-        echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
-
         // set server var for magento request handling
         $_SERVER                    = array();
         $_SERVER["REQUEST_URI"]     = "/index.php";
@@ -161,15 +125,10 @@ class MageWorker extends \Thread
         $_SERVER["SCRIPT_FILENAME"] = WEBROOT . "index.php";
         $_SERVER["HTTP_HOST"]       = "magento.local:9080";
 
-        echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
-
         require AUTOLOADER;
         require WEBROOT . 'app/Mage.php';
 
-        echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
-
         appserver_set_headers_sent(false);
-
         $magentoApp = \Mage::app();
         ob_start();
         $magentoApp->run(
@@ -181,15 +140,8 @@ class MageWorker extends \Thread
         );
         ob_end_clean();
 
-        appserver_get_headers(true);
-
-        echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
-
         $connection = StreamSocket::getInstance($this->connectionResource);
 
-        echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
-
-        $shutdownHandlerRegistered = false;
 
         // go for a loop while accepting clients
         do {
@@ -220,22 +172,123 @@ class MageWorker extends \Thread
                 }
             }
 
-            foreach(array('application_params', 'current_category', '_singleton/core/layout', 'current_entity_key', 'current_product', 'category', 'product') as $key) {
-              //  \Mage::unregister($key);
-            }
-
             try {
                 // accept client connection
                 if ($client = $connection->accept()) {
-                    $this->getApp()->handle($client, $magentoApp);
+
+                    // read socket for dummy
+                    list($httpMethod, $httpUri, $httpProtocol) = explode(' ', $client->readLine());
+
+                    // update the request method in the global $_SERVER var
+                    $_SERVER['REQUEST_METHOD'] = $httpMethod;
+
+                    // readin headers
+                    $headers = array();
+                    while (($line = $client->readLine()) !== "\r\n") {
+                        list($headerKey, $headerValue) = explode(': ', trim($line));
+                        $headers[$headerKey] = $headerValue;
+                    }
+                    // it// iterate all cookies and set them in globals if exists
+                    if (isset($headers['Cookie'])) {
+                        $cookieHeaderValue = $headers['Cookie'];
+                        foreach (explode(';', $cookieHeaderValue) as $cookieLine) {
+                            list ($key, $value) = explode('=', $cookieLine);
+                            $_COOKIE[trim($key)] = trim($value);
+                        }
+                    }
+
+                    if(isset($_COOKIE['frontend']) && strlen($_COOKIE['frontend'])) {
+                        session_id($_COOKIE['frontend']);
+                    }
+
+                    if (strpos($httpUri, '/index.php') === false) {
+                        // output serving static content
+                        $client->copyStream(fopen(WEBROOT . $httpUri, 'r'));
+                    } else {
+                        if ($httpMethod === 'POST') {
+                            if (isset($headers['Content-Length'])) {
+                                $bodyContent = $client->read($headers['Content-Length']);
+
+                                if (strpos($headers['Content-Type'], 'multipart/form-data') !== false) {
+                                    $this->parse_raw_http_request($_POST, $bodyContent, $headers);
+                                } else {
+                                    parse_str(urldecode($bodyContent), $_POST);
+                                }
+                            }
+                        }
+
+                        $appRequest  = new \Mage_Core_Controller_Request_Http();
+                        $appResponse = new \Mage_Core_Controller_Response_Http();
+                        $appRequest->setRequestUri($httpUri);
+
+                        $magentoApp->setRequest($appRequest);
+                        $magentoApp->setResponse($appResponse);
+
+                        ob_start();
+
+                        appserver_set_headers_sent(false);
+
+                        $magentoApp->run(
+                            array(
+                                 'scope_code' => 'default',
+                                 'scope_type' => 'store',
+                                 'options'    => array(),
+                            )
+                        );
+
+                        // build up res headers
+                        $resHeaders = array(
+                            "Server"         => "MageServer/0.1.0 (PHP 5.5.10)",
+                            "Connection"     => "Close",
+                            "Content-Length" => ob_get_length(),
+                            "X-Powered-By"   => "MageWorker",
+                            "Expires"        => "Thu, 19 Nov 1981 08:52:00 GMT",
+                            "Cache-Control"  => "no-store, no-cache, must-revalidate, post-check=0, pre-check=0",
+                            "Pragma"         => "no-cache",
+                            "Content-Type"   => "text/html; charset=UTF-8",
+                            "Date"           => "Sat, 17 May 14 16:44:40 +0000"
+                        );
+
+                        $headerStr          = '';
+                        $headerSetCookieStr = '';
+
+                        foreach (appserver_get_headers(true) as $resHeader) {
+                            list($resHeaderKey, $resHeaderValue) = explode(': ', $resHeader);
+                            // set cookie stuff
+                            if (strtolower($resHeaderKey) === 'set-cookie') {
+                                $headerSetCookieStr .= $resHeaderKey . ': ' . $resHeaderValue . "\r\n";
+                            } else {
+                                $resHeaders[$resHeaderKey] = $resHeaderValue;
+                            }
+                        }
+
+                        // generate header string
+                        foreach ($resHeaders as $resHeaderKey => $resHeaderValue) {
+                            $headerStr .= $resHeaderKey . ': ' . $resHeaderValue . "\r\n";
+                        }
+
+                        $client->write("HTTP/1.1 " . appserver_get_http_response_code() . "\r\n");
+                        $client->write($headerStr . $headerSetCookieStr);
+                        $client->write("\r\n" . ob_get_contents());
+
+                        ob_end_clean();
+                    }
+
+                    $client->close();
+
+                    $id = session_id();
+
+                    if (strlen($id)) {
+                        echo $id . PHP_EOL;
+                    }
+
+                    session_write_close();
+                    appserver_session_init();
                 }
             } catch (\Exception $e) {
                 $client->write($e);
                 $client->close();
             }
-
-            echo "Served by " . $this->getThreadId() . "\n\n";
-
         } while (1);
     }
 }
@@ -248,22 +301,9 @@ $serverConnection = StreamSocket::getServerInstance(
     'tcp://0.0.0.0:9080'
 );
 
-/*
-$ctx = new ZMQContext();
-$com = new ZMQSocket($ctx, ZMQ::SOCKET_ROUTER);
-$com->bind("ipc://com");
-*/
-
 // start mage workers
 $mageWorker = array();
-for ($i = 1; $i <= 4; $i++) {
+for ($i = 1; $i <= 12; $i++) {
     echo "Starting MageWorker #$i" . PHP_EOL;
     $mageWorker[$i] = new MageWorker($serverConnection->getConnectionResource());
 }
-
-/*
-$msg = new Zmsg($com);
-while ($msg->recv()) {
-    error_log($msg->body());
-}
-*/
