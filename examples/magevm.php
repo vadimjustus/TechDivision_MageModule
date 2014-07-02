@@ -23,6 +23,9 @@ namespace magevm;
 
 define('BASEDIR', __DIR__ . DIRECTORY_SEPARATOR);
 define('AUTOLOADER', '/opt/appserver/app/code' . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php');
+define('WEBROOT', '/var/www/magevm/');
+
+require_once 'app.php';
 
 use \TechDivision\Server\Sockets\StreamSocket;
 
@@ -41,6 +44,9 @@ class MageWorker extends \Thread
 
     protected $connectionResource;
 
+    /** @var  app */
+    protected $app;
+
     /**
      * Constructor
      *
@@ -50,6 +56,24 @@ class MageWorker extends \Thread
     {
         $this->connectionResource = $connectionResource;
         $this->start(PTHREADS_INHERIT_ALL | PTHREADS_ALLOW_HEADERS);
+        $this->setApp(new app());
+        //$this->run();
+    }
+
+    /**
+     * @param app $app
+     */
+    public function setApp(app $app)
+    {
+        $this->app = $app;
+    }
+
+    /**
+     * @return app
+     */
+    public function getApp()
+    {
+        return $this->app;
     }
 
     /**
@@ -118,6 +142,7 @@ class MageWorker extends \Thread
     public function run()
     {
 
+
         /*
         $ctx = new ZMQContext();
         //  First allow 0MQ to set the identity
@@ -133,17 +158,18 @@ class MageWorker extends \Thread
         $_SERVER                    = array();
         $_SERVER["REQUEST_URI"]     = "/index.php";
         $_SERVER["SCRIPT_NAME"]     = "/index.php";
-        $_SERVER["SCRIPT_FILENAME"] = "/var/www/magento/index.php";
+        $_SERVER["SCRIPT_FILENAME"] = WEBROOT . "index.php";
         $_SERVER["HTTP_HOST"]       = "magento.local:9080";
 
         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
 
         require AUTOLOADER;
-        require '/var/www/magento/app/Mage.php';
+        require WEBROOT . 'app/Mage.php';
 
         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
 
         appserver_set_headers_sent(false);
+
         $magentoApp = \Mage::app();
         ob_start();
         $magentoApp->run(
@@ -155,14 +181,30 @@ class MageWorker extends \Thread
         );
         ob_end_clean();
 
+        appserver_get_headers(true);
+
         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
 
         $connection = StreamSocket::getInstance($this->connectionResource);
 
         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
 
+        $shutdownHandlerRegistered = false;
+
         // go for a loop while accepting clients
         do {
+
+            // set server var for magento request handling
+            $_SERVER                    = array();
+            $_SERVER["REQUEST_URI"]     = "/index.php";
+            $_SERVER["SCRIPT_NAME"]     = "/index.php";
+            $_SERVER["SCRIPT_FILENAME"] = WEBROOT . "index.php";
+            $_SERVER["HTTP_HOST"]       = "magento.local:9080";
+
+            // make sure the superglobals are clean before we start
+            $_COOKIE = array();
+            unset($_SESSION);
+
             // the registry keys to preserve from cleaning up after every magento app request
             $registryPreserveKeys = array();
 
@@ -173,120 +215,27 @@ class MageWorker extends \Thread
 
             // cleanup mage registry
             foreach ($registryCleanKeys as $registryCleanKey) {
-                \Mage::unregister($registryCleanKey);
+                if (!in_array($registryCleanKey, $registryPreserveKeys)) {
+                    \Mage::unregister($registryCleanKey);
+                }
+            }
+
+            foreach(array('application_params', 'current_category', '_singleton/core/layout', 'current_entity_key', 'current_product', 'category', 'product') as $key) {
+              //  \Mage::unregister($key);
             }
 
             try {
                 // accept client connection
                 if ($client = $connection->accept()) {
-
-                    echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
-
-                    // read socket for dummy
-                    list($httpMethod, $httpUri, $httpProtocol) = explode(' ', $client->readLine());
-
-                    // update the request method in the global $_SERVER var
-                    $_SERVER['REQUEST_METHOD'] = $httpMethod;
-
-                    // readin headers
-                    $headers = array();
-                    while (($line = $client->readLine()) !== "\r\n") {
-                        list($headerKey, $headerValue) = explode(': ', trim($line));
-                        $headers[$headerKey] = $headerValue;
-                    }
-                    // iterate all cookies and set them in globals if exists
-                    if (isset($headers['Cookie'])) {
-                        $cookieHeaderValue = $headers['Cookie'];
-                        foreach (explode('; ', $cookieHeaderValue) as $cookieLine) {
-                            list ($key, $value) = explode('=', $cookieLine);
-                            $_COOKIE[$key] = $value;
-                        }
-                    }
-                    echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
-
-                    if (strpos($httpUri, '/index.php') === false) {
-                        // output serving static content
-                        $client->copyStream(fopen('/var/www/magento' . $httpUri, 'r'));
-                    } else {
-                        if ($httpMethod === 'POST') {
-                            if (isset($headers['Content-Length'])) {
-                                $bodyContent = $client->read($headers['Content-Length']);
-
-                                if (strpos($headers['Content-Type'], 'multipart/form-data') !== false) {
-                                    $this->parse_raw_http_request($_POST, $bodyContent, $headers);
-                                } else {
-                                    parse_str(urldecode($bodyContent), $_POST);
-                                }
-                            }
-                        }
-
-                        echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
-
-                        $appRequest  = new \Mage_Core_Controller_Request_Http();
-                        $appResponse = new \Mage_Core_Controller_Response_Http();
-                        $appRequest->setRequestUri($httpUri);
-
-                        echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
-
-                        $magentoApp->setRequest($appRequest);
-                        $magentoApp->setResponse($appResponse);
-
-                        ob_start();
-
-                        appserver_set_headers_sent(false);
-
-                        //echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
-
-                        $magentoApp->run(
-                            array(
-                                 'scope_code' => 'default',
-                                 'scope_type' => 'store',
-                                 'options'    => array(),
-                            )
-                        );
-
-                        //echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
-
-                        // build up res headers
-                        $resHeaders = array(
-                            "Server"         => "MageServer/0.1.0 (PHP 5.5.10)",
-                            "Connection"     => "Close",
-                            "Content-Length" => ob_get_length(),
-                            "X-Powered-By"   => "MageWorker",
-                            "Expires"        => "Thu, 19 Nov 1981 08:52:00 GMT",
-                            "Cache-Control"  => "no-store, no-cache, must-revalidate, post-check=0, pre-check=0",
-                            "Pragma"         => "no-cache",
-                            "Content-Type"   => "text/html; charset=UTF-8",
-                            "Date"           => "Sat, 17 May 14 16:44:40 +0000"
-                        );
-                        $headerStr  = '';
-                        foreach (appserver_get_headers(true) as $resHeader) {
-                            list($resHeaderKey, $resHeaderValue) = explode(': ', $resHeader);
-                            $resHeaders[$resHeaderKey] = $resHeaderValue;
-                        }
-                        // generate header string
-                        foreach ($resHeaders as $resHeaderKey => $resHeaderValue) {
-                            $headerStr .= $resHeaderKey . ': ' . $resHeaderValue . "\r\n";
-                        }
-
-                        $client->write("HTTP/1.1 " . appserver_get_http_response_code() . "\r\n");
-                        $client->write($headerStr);
-                        $client->write("\r\n" . ob_get_contents());
-
-                        ob_end_clean();
-                    }
-
-                    echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
-                    $client->close();
-
-                    session_write_close();
-
-                    appserver_session_init();
+                    $this->getApp()->handle($client, $magentoApp);
                 }
             } catch (\Exception $e) {
                 $client->write($e);
                 $client->close();
             }
+
+            echo "Served by " . $this->getThreadId() . "\n\n";
+
         } while (1);
     }
 }
