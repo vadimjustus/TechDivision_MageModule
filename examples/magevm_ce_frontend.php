@@ -197,7 +197,7 @@ class MageWorker extends \Thread
                         }
                     }
 
-                    if(isset($_COOKIE['frontend']) && strlen($_COOKIE['frontend'])) {
+                    if (isset($_COOKIE['frontend']) && strlen($_COOKIE['frontend'])) {
                         session_id($_COOKIE['frontend']);
                     }
 
@@ -275,12 +275,6 @@ class MageWorker extends \Thread
                     }
 
                     $client->close();
-
-                    $id = session_id();
-
-                    if (strlen($id)) {
-                        echo $id . PHP_EOL;
-                    }
 
                     session_write_close();
                     appserver_session_init();
