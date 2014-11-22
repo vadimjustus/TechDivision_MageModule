@@ -22,25 +22,79 @@
 namespace magevm;
 
 define('BASEDIR', __DIR__ . DIRECTORY_SEPARATOR);
-define('AUTOLOADER', '/opt/appserver/app/code' . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php');
+define('AUTOLOADER', '/opt/appserver' . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php');
 define('WEBROOT', '/var/www/magevm/');
 
 use \TechDivision\Server\Sockets\StreamSocket;
+
+class SessionContainer extends \Stackable
+{
+    public function run() {}
+}
+
+class SessionHandler extends \Thread
+{
+    protected $container;
+
+    public function __construct()
+    {
+        $this->container = new SessionContainer();
+        $this->start();
+    }
+
+    public function run()
+    {
+        while(true) {
+            // run permanently
+        };
+    }
+
+    /**
+     * @param string $id
+     * @return null|array
+     */
+    public function getData($id)
+    {
+        if (isset($this->container[$id])) {
+            return $this->container[$id];
+        }
+        return null;
+    }
+
+    /**
+     * @param string $id
+     * @param array $data
+     */
+    public function setData($id, $data = array())
+    {
+        $this->container[$id] = $data;
+    }
+}
 
 /**
  * Class MageWorker
  *
  * @category  Webserver
  * @package   TechDivision_MageModule
- * @author    Johann Zelger <jz@techdivision.com>
  * @copyright 2014 TechDivision GmbH <info@techdivision.com>
  * @license   http://opensource.org/licenses/osl-3.0.php Open Software License (OSL 3.0)
  * @link      https://github.com/techdivision/TechDivision_MageModule
+ * @author    Johann Zelger <jz@techdivision.com>
  */
 class MageWorker extends \Thread
 {
 
     protected $connectionResource;
+
+    /**
+     * @var string
+     */
+    private $name = '';
+
+    /**
+     * @var \magevm\SessionHandler
+     */
+    private $sessionHandler;
 
     /**
      * Constructor
@@ -51,6 +105,30 @@ class MageWorker extends \Thread
     {
         $this->connectionResource = $connectionResource;
         $this->start(PTHREADS_INHERIT_ALL | PTHREADS_ALLOW_HEADERS);
+    }
+
+    /**
+     * @param string $name
+     */
+    public function setName($name)
+    {
+        $this->name = $name;
+    }
+
+    /**
+     * @return string
+     */
+    public function getName()
+    {
+        return $this->name;
+    }
+
+    /**
+     * @param SessionHandler $sessionHandler
+     */
+    public function setSessionHandler(SessionHandler $sessionHandler)
+    {
+        $this->sessionHandler = $sessionHandler;
     }
 
     /**
@@ -140,8 +218,10 @@ class MageWorker extends \Thread
         );
         ob_end_clean();
 
-        $connection = StreamSocket::getInstance($this->connectionResource);
+        session_write_close();
+        appserver_session_init();
 
+        $connection = StreamSocket::getInstance($this->connectionResource);
 
         // go for a loop while accepting clients
         do {
@@ -199,6 +279,10 @@ class MageWorker extends \Thread
 
                     if (isset($_COOKIE['frontend']) && strlen($_COOKIE['frontend'])) {
                         session_id($_COOKIE['frontend']);
+
+                        if ($sessionData = $this->sessionHandler->getData(session_id())) {
+                            $_SESSION = $sessionData;
+                        }
                     }
 
                     if (strpos($httpUri, '/index.php') === false) {
@@ -206,7 +290,7 @@ class MageWorker extends \Thread
                         $client->copyStream(fopen(WEBROOT . $httpUri, 'r'));
                     } else {
                         if ($httpMethod === 'POST') {
-                            if (isset($headers['Content-Length'])) {
+                            if (isset($headers['Content-Length']) && $headers['Content-Length'] > 0) {
                                 $bodyContent = $client->read($headers['Content-Length']);
 
                                 if (strpos($headers['Content-Type'], 'multipart/form-data') !== false) {
@@ -271,6 +355,13 @@ class MageWorker extends \Thread
                         $client->write($headerStr . $headerSetCookieStr);
                         $client->write("\r\n" . ob_get_contents());
 
+                        \Mage::log("Thread ID: {$this->getThreadId()}; Thread Name: {$this->getName()}");
+
+                        if (isset($_SESSION)) {
+                            \Mage::log(sprintf('Write session data to session handler with id %s.', session_id()));
+                            $this->sessionHandler->setData(session_id(), $_SESSION);
+                        }
+
                         ob_end_clean();
                     }
 
@@ -295,9 +386,28 @@ $serverConnection = StreamSocket::getServerInstance(
     'tcp://0.0.0.0:9080'
 );
 
+$workerNames = array(
+    1 => 'Hans', 'Tim', 'Stocki', 'Rene', 'Vadim',
+    'Lars', 'Flo', 'Witte', 'Stefan', 'Sepp',
+    'Berwanger', 'Faihu', 'Luna', 'Lili', 'Tulpe',
+    'Samba', 'Bert', 'Dodo'
+);
+
+shuffle($workerNames);
+
+$sessionHandler = new SessionHandler();
+usleep(100000);
+
+$threads = $argv[1];
+
 // start mage workers
 $mageWorker = array();
-for ($i = 1; $i <= 12; $i++) {
-    echo "Starting MageWorker #$i" . PHP_EOL;
-    $mageWorker[$i] = new MageWorker($serverConnection->getConnectionResource());
+for ($i = 1; $i <= $threads; $i++) {
+    $worker = new MageWorker($serverConnection->getConnectionResource());
+    $name = "[" . str_pad($i, 3, '0', STR_PAD_LEFT) . "] " . (isset($workerNames[$i]) ? $workerNames[$i] : 'no-name');
+    $worker->setName($name);
+    $worker->setSessionHandler($sessionHandler);
+    echo "Starting MageWorker {$worker->getName()} with ID {$worker->getThreadId()}" . PHP_EOL;
+    $mageWorker[$i] = $worker;
+    usleep(100000);
 }

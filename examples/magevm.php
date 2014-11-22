@@ -21,7 +21,7 @@
 namespace magevm;
 
 define('BASEDIR', __DIR__ . DIRECTORY_SEPARATOR);
-define('AUTOLOADER', '/opt/appserver/app/code' . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php');
+define('AUTOLOADER', '/opt/appserver' . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php');
 
 use \TechDivision\Server\Sockets\StreamSocket;
 
