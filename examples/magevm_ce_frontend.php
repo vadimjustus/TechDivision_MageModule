@@ -21,55 +21,16 @@
 
 namespace magevm;
 
+require __DIR__ . '/lib/SessionContainer.php';
+
 define('BASEDIR', __DIR__ . DIRECTORY_SEPARATOR);
 define('AUTOLOADER', '/opt/appserver' . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php');
 define('WEBROOT', '/var/www/magevm/');
+define('DOMAIN', 'magento.local');
+define('PORT', '80');
+define('LOGFILE', __DIR__ . '/../tmp/server.log');
 
 use \TechDivision\Server\Sockets\StreamSocket;
-
-class SessionContainer extends \Stackable
-{
-    public function run() {}
-}
-
-class SessionHandler extends \Thread
-{
-    protected $container;
-
-    public function __construct()
-    {
-        $this->container = new SessionContainer();
-        $this->start();
-    }
-
-    public function run()
-    {
-        while(true) {
-            // run permanently
-        };
-    }
-
-    /**
-     * @param string $id
-     * @return null|array
-     */
-    public function getData($id)
-    {
-        if (isset($this->container[$id])) {
-            return $this->container[$id];
-        }
-        return null;
-    }
-
-    /**
-     * @param string $id
-     * @param array $data
-     */
-    public function setData($id, $data = array())
-    {
-        $this->container[$id] = $data;
-    }
-}
 
 /**
  * Class MageWorker
@@ -92,9 +53,19 @@ class MageWorker extends \Thread
     private $name = '';
 
     /**
-     * @var \magevm\SessionHandler
+     * @var \magevm\SessionContainer
      */
-    private $sessionHandler;
+    private $sessionContainer;
+
+    /**
+     * @var bool
+     */
+    private $sessionContainerMode = true;
+
+    /**
+     * @var string
+     */
+    private $logFile;
 
     /**
      * Constructor
@@ -104,7 +75,6 @@ class MageWorker extends \Thread
     public function __construct($connectionResource)
     {
         $this->connectionResource = $connectionResource;
-        $this->start(PTHREADS_INHERIT_ALL | PTHREADS_ALLOW_HEADERS);
     }
 
     /**
@@ -124,11 +94,43 @@ class MageWorker extends \Thread
     }
 
     /**
-     * @param SessionHandler $sessionHandler
+     * @param bool $bool
      */
-    public function setSessionHandler(SessionHandler $sessionHandler)
+    public function setSessionContainerMode($bool)
     {
-        $this->sessionHandler = $sessionHandler;
+        $this->sessionContainerMode = (bool)$bool;
+    }
+
+    /**
+     * @return bool
+     */
+    public function isSessionContainerMode()
+    {
+        return (bool)$this->sessionContainerMode;
+    }
+
+    /**
+     * @param SessionContainer $sessionContainer
+     */
+    public function setSessionContainer(SessionContainer $sessionContainer)
+    {
+        $this->sessionContainer = $sessionContainer;
+    }
+
+    /**
+     * @param string $filepath
+     */
+    public function setLogFile($filepath)
+    {
+        $this->logFile = $filepath;
+    }
+
+    /**
+     * @return string
+     */
+    public function getLogFile()
+    {
+        return $this->logFile;
     }
 
     /**
@@ -140,10 +142,10 @@ class MageWorker extends \Thread
      * Any files found in the request will be added by their field name to the
      * $data['files'] array.
      *
-     * @param array  $a_data Empty array to fill with data
+     * @param array $a_data Empty array to fill with data
      * @param string $input
      *
-     * @param array  $headers
+     * @param array $headers
      *
      * @return  array  Associative array of request data
      *
@@ -190,30 +192,41 @@ class MageWorker extends \Thread
     }
 
     /**
+     * @param string $msg
+     */
+    public function log($msg)
+    {
+        $message =  date('Y-m-d H:i:s') . ' - ' . str_pad($this->getName() . ':', 25, ' ') . $msg . PHP_EOL;
+        error_log($message, 3, $this->getLogFile());
+    }
+
+    /**
      * Runs the vm
      *
      * @return void
      */
     public function run()
     {
-        // set server var for magento request handling
         $_SERVER                    = array();
         $_SERVER["REQUEST_URI"]     = "/index.php";
         $_SERVER["SCRIPT_NAME"]     = "/index.php";
         $_SERVER["SCRIPT_FILENAME"] = WEBROOT . "index.php";
-        $_SERVER["HTTP_HOST"]       = "magento.local:9080";
+        $_SERVER["HTTP_HOST"]       = DOMAIN . ":" . PORT;
 
         require AUTOLOADER;
         require WEBROOT . 'app/Mage.php';
 
+        $this->log('Warm up Magento instance.');
+
         appserver_set_headers_sent(false);
         $magentoApp = \Mage::app();
+
         ob_start();
         $magentoApp->run(
             array(
-                 'scope_code' => 'default',
-                 'scope_type' => 'store',
-                 'options'    => array(),
+                'scope_code' => 'default',
+                'scope_type' => 'store',
+                'options'    => array(),
             )
         );
         ob_end_clean();
@@ -226,16 +239,17 @@ class MageWorker extends \Thread
         // go for a loop while accepting clients
         do {
 
-            // set server var for magento request handling
             $_SERVER                    = array();
             $_SERVER["REQUEST_URI"]     = "/index.php";
             $_SERVER["SCRIPT_NAME"]     = "/index.php";
             $_SERVER["SCRIPT_FILENAME"] = WEBROOT . "index.php";
-            $_SERVER["HTTP_HOST"]       = "magento.local:9080";
+            $_SERVER["HTTP_HOST"]       = DOMAIN . ":" . PORT;
 
             // make sure the superglobals are clean before we start
             $_COOKIE = array();
             unset($_SESSION);
+
+            $this->log('Clean Magento registry');
 
             // the registry keys to preserve from cleaning up after every magento app request
             $registryPreserveKeys = array();
@@ -280,10 +294,14 @@ class MageWorker extends \Thread
                     if (isset($_COOKIE['frontend']) && strlen($_COOKIE['frontend'])) {
                         session_id($_COOKIE['frontend']);
 
-                        if ($sessionData = $this->sessionHandler->getData(session_id())) {
+                        if ($this->isSessionContainerMode()
+                            && $sessionData = $this->sessionContainer->getData(session_id())
+                        ) {
                             $_SESSION = $sessionData;
                         }
                     }
+
+                    $this->log(sprintf('Execute request: %s', $httpUri));
 
                     if (strpos($httpUri, '/index.php') === false) {
                         // output serving static content
@@ -309,9 +327,10 @@ class MageWorker extends \Thread
                         $magentoApp->setResponse($appResponse);
 
                         ob_start();
-
                         appserver_set_headers_sent(false);
 
+                        $this->log("Run Magento app");
+                        $start = microtime(true);
                         $magentoApp->run(
                             array(
                                  'scope_code' => 'default',
@@ -319,6 +338,8 @@ class MageWorker extends \Thread
                                  'options'    => array(),
                             )
                         );
+                        $duration = microtime(true) - $start;
+                        $this->log(sprintf('Finish Magento app run in %.6f', $duration));
 
                         // build up res headers
                         $resHeaders = array(
@@ -355,11 +376,11 @@ class MageWorker extends \Thread
                         $client->write($headerStr . $headerSetCookieStr);
                         $client->write("\r\n" . ob_get_contents());
 
-                        \Mage::log("Thread ID: {$this->getThreadId()}; Thread Name: {$this->getName()}");
+                        $this->log("Wrote response body");
 
-                        if (isset($_SESSION)) {
-                            \Mage::log(sprintf('Write session data to session handler with id %s.', session_id()));
-                            $this->sessionHandler->setData(session_id(), $_SESSION);
+                        if ($this->isSessionContainerMode() && isset($_SESSION)) {
+                            $this->log(sprintf('Write session data to session handler with id %s.', session_id()));
+                            $this->sessionContainer->setData(session_id(), $_SESSION);
                         }
 
                         ob_end_clean();
@@ -383,20 +404,20 @@ require AUTOLOADER;
 
 // open server connection to www
 $serverConnection = StreamSocket::getServerInstance(
-    'tcp://0.0.0.0:9080'
+    'tcp://0.0.0.0:' . PORT
 );
 
 $workerNames = array(
     1 => 'Hans', 'Tim', 'Stocki', 'Rene', 'Vadim',
     'Lars', 'Flo', 'Witte', 'Stefan', 'Sepp',
     'Berwanger', 'Faihu', 'Luna', 'Lili', 'Tulpe',
-    'Samba', 'Bert', 'Dodo'
+    'Samba', 'Bert', 'Dodo', 'Philipp', 'Datterich',
+    'Matze', 'Fredi', 'Marvin', 'Peter', 'Jean'
 );
 
 shuffle($workerNames);
 
-$sessionHandler = new SessionHandler();
-usleep(100000);
+$session = new SessionContainer();
 
 $threads = $argv[1];
 
@@ -404,10 +425,17 @@ $threads = $argv[1];
 $mageWorker = array();
 for ($i = 1; $i <= $threads; $i++) {
     $worker = new MageWorker($serverConnection->getConnectionResource());
+
     $name = "[" . str_pad($i, 3, '0', STR_PAD_LEFT) . "] " . (isset($workerNames[$i]) ? $workerNames[$i] : 'no-name');
+
     $worker->setName($name);
-    $worker->setSessionHandler($sessionHandler);
-    echo "Starting MageWorker {$worker->getName()} with ID {$worker->getThreadId()}" . PHP_EOL;
+    $worker->setSessionContainer($session);
+    $worker->setSessionContainerMode(false);
+    $worker->setLogFile(LOGFILE);
+    $worker->start(PTHREADS_INHERIT_ALL | PTHREADS_ALLOW_HEADERS);
+
+    $worker->log('Started');
+
     $mageWorker[$i] = $worker;
     usleep(100000);
 }
