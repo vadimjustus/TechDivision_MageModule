@@ -117,6 +117,7 @@ class MageWorker extends \Thread
      * Print a backtrace to know why / from where the thread shut down.
      *
      * @param void
+     *
      * @return void
      */
     public function shutdown()
@@ -183,7 +184,7 @@ class MageWorker extends \Thread
                 '_resource_singleton/core/store_group',
                 '_resource_singleton/core/store',
                 '_resource_helper/core',
-                '_singleton/core/cookie',
+                //'_singleton/core/cookie',
                 //'application_params',
                 '_resource_singleton/core/resource',
                 '_helper/core',
@@ -229,6 +230,7 @@ class MageWorker extends \Thread
                 '_helper/catalog',
                 '_helper/catalog/map',
                 '_helper/catalogsearch',
+
                 '_helper/checkout/cart',
                 '_singleton/checkout/cart',
                 //'_singleton/checkout/session',
@@ -246,17 +248,19 @@ class MageWorker extends \Thread
                 '_helper/catalog/category_flat',
                 '_singleton/eav/config',
                 '_resource_singleton/eav/entity_type',
-                '_resource_singleton/catalog/category',
+                //'_resource_singleton/catalog/category',
                 '_singleton/catalog/factory',
-                '_resource_singleton/catalog/attribute',
+                //'_resource_singleton/catalog/attribute',
+
                 '_helper/catalog/category_url_rewrite',
                 '_resource_helper/eav',
-                '_singleton/catalog/layer',
+                // '_singleton/catalog/layer',
                 '_resource_helper/catalog',
                 '_helper/wishlist',
                 '_singleton/paypal/config',
                 '_helper/cms',
                 '_resource_singleton/tag/tag',
+
                 //'_singleton/reports/session',
                 '_resource_singleton/reports/product_index_compared',
                 '_helper/catalog/product_flat',
@@ -268,8 +272,6 @@ class MageWorker extends \Thread
                 '_helper/core/cookie',
                 '_singleton/core/date'
             );
-
-            //$registryPreserveKeys = array();
 
             $reflect = new \ReflectionClass('\Mage');
             $props = $reflect->getStaticProperties();
