@@ -22,6 +22,7 @@ namespace magevm;
 
 define('BASEDIR', __DIR__ . DIRECTORY_SEPARATOR);
 define('AUTOLOADER', '/opt/appserver' . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php');
+define('WEBROOT', '/var/www/magevm/');
 
 use \TechDivision\Server\Sockets\StreamSocket;
 
@@ -31,7 +32,6 @@ use \TechDivision\Server\Sockets\StreamSocket;
  * @category  Webserver
  * @package   TechDivision_MageModule
  * @author    Johann Zelger <jz@techdivision.com>
- * @author    Markus Stockbauer <ms@techdivision.com>
  * @copyright 2014 TechDivision GmbH <info@techdivision.com>
  * @license   http://opensource.org/licenses/osl-3.0.php Open Software License (OSL 3.0)
  * @link      https://github.com/techdivision/TechDivision_MageModule
@@ -74,7 +74,7 @@ class MageWorker extends \Thread
         $_SERVER                    = array();
         $_SERVER["REQUEST_URI"]     = "/index.php";
         $_SERVER["SCRIPT_NAME"]     = "/index.php";
-        $_SERVER["SCRIPT_FILENAME"] = "/var/www/magevm/index.php";
+        $_SERVER["SCRIPT_FILENAME"] = WEBROOT . "/index.php";
         $_SERVER["HTTP_HOST"]       = "magento.local:9080";
 
         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
@@ -213,7 +213,7 @@ class MageWorker extends \Thread
 
                     if (strpos($httpUri, '/index.php') === false) {
                         // output serving static content
-                        $client->copyStream(fopen('/var/www/magevm' . $httpUri, 'r'));
+                        $client->copyStream(fopen(WEBROOT . $httpUri, 'r'));
                     } else {
                         if ($httpMethod === 'POST') {
                             if (isset($headers['Content-Length'])) {
