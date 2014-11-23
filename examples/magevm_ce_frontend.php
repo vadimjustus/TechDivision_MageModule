@@ -22,8 +22,9 @@
 namespace magevm;
 
 define('BASEDIR', __DIR__ . DIRECTORY_SEPARATOR);
-define('AUTOLOADER', '/opt/appserver/app/code' . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php');
-define('WEBROOT', '/var/www/magevm/');
+define('AUTOLOADER', '/opt/appserver' . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php');
+define('WEBROOT', '/var/www/magevm_enterprise/');
+define('DEFAULT_THREAD_NUM', '16');
 
 use \TechDivision\Server\Sockets\StreamSocket;
 
@@ -113,56 +114,165 @@ class MageWorker extends \Thread
     }
 
     /**
+     * Print a backtrace to know why / from where the thread shut down.
+     *
+     * @param void
+     * @return void
+     */
+    public function shutdown()
+    {
+        debug_print_backtrace();
+    }
+
+    /**
      * Runs the vm
      *
      * @return void
      */
     public function run()
     {
+        register_shutdown_function(array($this, 'shutdown'));
+
         // set server var for magento request handling
-        $_SERVER                    = array();
-        $_SERVER["REQUEST_URI"]     = "/index.php";
-        $_SERVER["SCRIPT_NAME"]     = "/index.php";
+        $_SERVER = array();
+        $_SERVER["REQUEST_URI"] = "/index.php";
+        $_SERVER["SCRIPT_NAME"] = "/index.php";
         $_SERVER["SCRIPT_FILENAME"] = WEBROOT . "index.php";
-        $_SERVER["HTTP_HOST"]       = "magento.local:9080";
+        $_SERVER["HTTP_HOST"] = "magento.local";
 
         require AUTOLOADER;
         require WEBROOT . 'app/Mage.php';
 
         appserver_set_headers_sent(false);
         $magentoApp = \Mage::app();
+
         ob_start();
         $magentoApp->run(
             array(
-                 'scope_code' => 'default',
+                 'scope_code' => '',
                  'scope_type' => 'store',
                  'options'    => array(),
             )
         );
         ob_end_clean();
 
-        $connection = StreamSocket::getInstance($this->connectionResource);
+        session_write_close();
+        appserver_session_init();
 
+        $connection = StreamSocket::getInstance($this->connectionResource);
 
         // go for a loop while accepting clients
         do {
 
             // set server var for magento request handling
-            $_SERVER                    = array();
-            $_SERVER["REQUEST_URI"]     = "/index.php";
-            $_SERVER["SCRIPT_NAME"]     = "/index.php";
+            $_SERVER = array();
+            $_SERVER["REQUEST_URI"] = "/index.php";
+            $_SERVER["SCRIPT_NAME"] = "/index.php";
             $_SERVER["SCRIPT_FILENAME"] = WEBROOT . "index.php";
-            $_SERVER["HTTP_HOST"]       = "magento.local:9080";
+            $_SERVER["HTTP_HOST"] = "magento.local";
 
             // make sure the superglobals are clean before we start
             $_COOKIE = array();
             unset($_SESSION);
 
             // the registry keys to preserve from cleaning up after every magento app request
-            $registryPreserveKeys = array();
+            $registryPreserveKeys = array(
+                'original_include_path',
+                '_singleton/core/resource',
+                '_resource_singleton/core/website',
+                '_resource_singleton/core/store_group',
+                '_resource_singleton/core/store',
+                '_resource_helper/core',
+                '_singleton/core/cookie',
+                //'application_params',
+                '_resource_singleton/core/resource',
+                '_helper/core',
+                '_singleton/core/resource_setup_query_modifier',
+                'controller',
+                '_singleton/Mage_Cms_Controller_Router',
+                '_singleton/core/factory',
+                '_resource_singleton/core/url_rewrite',
+                //'_singleton/core/layout',
+                '_helper/core/http',
+                //'_singleton/core/session',
+                '_singleton/core/design_config',
+                '_singleton/core/design_fallback',
+                '_singleton/core/design_package',
+                '_singleton/core/design',
+                '_resource_singleton/core/design',
+                '_singleton/core/translate',
+                '_singleton/core/locale',
+                '_singleton/core/translate_inline',
+                '_resource_singleton/core/translate',
+                '_singleton/Mage_Core_Model_Domainpolicy',
+                '_singleton/xmlconnect/observer',
+                '_helper/core/string',
+                '_singleton/log/visitor',
+                '_resource_singleton/log/visitor',
+                '_singleton/pagecache/observer',
+                '_helper/pagecache',
+                '_singleton/persistent/observer',
+                '_helper/persistent',
+                //'_helper/persistent/session',
+                //'_resource_singleton/persistent/session',
+                //'_singleton/persistent/observer_session',
+                '_singleton/customer/config_share',
+                //'_singleton/customer/session',
+                '_helper/cms/page',
+                '_singleton/cms/page',
+                '_resource_singleton/cms/page',
+                '_helper/page/layout',
+                '_singleton/page/config',
+                '_helper/page',
+                '_singleton/customer/observer',
+                '_helper/customer',
+                '_helper/catalog',
+                '_helper/catalog/map',
+                '_helper/catalogsearch',
+                '_helper/checkout/cart',
+                '_singleton/checkout/cart',
+                //'_singleton/checkout/session',
+                '_helper/checkout',
+                //'_singleton/catalog/session',
+                '_helper/core/file_storage_database',
+                '_helper/core/js',
+                '_helper/directory',
+                '_helper/googleanalytics',
+                '_helper/adminhtml',
+                '_helper/widget',
+                '_singleton/core/url',
+                '_singleton/catalog/observer',
+                '_helper/catalog/category',
+                '_helper/catalog/category_flat',
+                '_singleton/eav/config',
+                '_resource_singleton/eav/entity_type',
+                '_resource_singleton/catalog/category',
+                '_singleton/catalog/factory',
+                '_resource_singleton/catalog/attribute',
+                '_helper/catalog/category_url_rewrite',
+                '_resource_helper/eav',
+                '_singleton/catalog/layer',
+                '_resource_helper/catalog',
+                '_helper/wishlist',
+                '_singleton/paypal/config',
+                '_helper/cms',
+                '_resource_singleton/tag/tag',
+                //'_singleton/reports/session',
+                '_resource_singleton/reports/product_index_compared',
+                '_helper/catalog/product_flat',
+                '_resource_singleton/catalog/product',
+                '_singleton/catalog/product_visibility',
+                '_resource_singleton/reports/product_index_viewed',
+                '_helper/catalog/product_compare',
+                '_resource_singleton/cms/block',
+                '_helper/core/cookie',
+                '_singleton/core/date'
+            );
+
+            //$registryPreserveKeys = array();
 
             $reflect = new \ReflectionClass('\Mage');
-            $props   = $reflect->getStaticProperties();
+            $props = $reflect->getStaticProperties();
 
             $registryCleanKeys = array_keys($props['_registry']);
 
@@ -178,7 +288,7 @@ class MageWorker extends \Thread
                 if ($client = $connection->accept()) {
 
                     // read socket for dummy
-                    list($httpMethod, $httpUri, $httpProtocol) = explode(' ', $client->readLine());
+                    list($httpMethod, $httpUri, $httpProtocol) = explode(' ', $line = $client->readLine());
 
                     // update the request method in the global $_SERVER var
                     $_SERVER['REQUEST_METHOD'] = $httpMethod;
@@ -198,19 +308,17 @@ class MageWorker extends \Thread
                         }
                     }
 
-                    if (isset($_COOKIE['frontend']) && strlen($_COOKIE['frontend'])) {
-                        session_id($_COOKIE['frontend']);
-                    }
-
                     if (strpos($httpUri, '/index.php') === false) {
                         // output serving static content
                         $client->copyStream(fopen(WEBROOT . $httpUri, 'r'));
                     } else {
                         if ($httpMethod === 'POST') {
-                            if (isset($headers['Content-Length'])) {
+                            if (isset($headers['Content-Length']) && $headers['Content-Length'] > 0) {
                                 $bodyContent = $client->read($headers['Content-Length']);
 
-                                if (strpos($headers['Content-Type'], 'multipart/form-data') !== false) {
+                                if (isset($headers['Content-Type'])
+                                    && strpos($headers['Content-Type'], 'multipart/form-data') !== false
+                                ) {
                                     $this->parse_raw_http_request($_POST, $bodyContent, $headers);
                                 } else {
                                     parse_str(urldecode($bodyContent), $_POST);
@@ -218,7 +326,17 @@ class MageWorker extends \Thread
                             }
                         }
 
-                        $appRequest  = new \Mage_Core_Controller_Request_Http();
+                        if (strpos($httpUri, 'admin') === false) {
+                            if (isset($_COOKIE['frontend']) && strlen($_COOKIE['frontend'])) {
+                                session_id($_COOKIE['frontend']);
+                            }
+                        } else {
+                            if (isset($_COOKIE['adminhtml']) && strlen($_COOKIE['adminhtml'])) {
+                                session_id($_COOKIE['adminhtml']);
+                            }
+                        }
+
+                        $appRequest = new \Mage_Core_Controller_Request_Http();
                         $appResponse = new \Mage_Core_Controller_Response_Http();
                         $appRequest->setRequestUri($httpUri);
 
@@ -229,13 +347,17 @@ class MageWorker extends \Thread
 
                         appserver_set_headers_sent(false);
 
-                        $magentoApp->run(
-                            array(
-                                 'scope_code' => 'default',
-                                 'scope_type' => 'store',
-                                 'options'    => array(),
-                            )
-                        );
+                        try {
+                            $magentoApp->run(
+                                array(
+                                     'scope_code' => '',
+                                     'scope_type' => 'store',
+                                     'options'    => array(),
+                                )
+                            );
+                        } catch (\RuntimeException $e) {
+                            // nothing
+                        }
 
                         // build up res headers
                         $resHeaders = array(
@@ -250,7 +372,7 @@ class MageWorker extends \Thread
                             "Date"           => "Sat, 17 May 14 16:44:40 +0000"
                         );
 
-                        $headerStr          = '';
+                        $headerStr = '';
                         $headerSetCookieStr = '';
 
                         foreach (appserver_get_headers(true) as $resHeader) {
@@ -268,9 +390,11 @@ class MageWorker extends \Thread
                             $headerStr .= $resHeaderKey . ': ' . $resHeaderValue . "\r\n";
                         }
 
+                        $content = ob_get_contents();
+
                         $client->write("HTTP/1.1 " . appserver_get_http_response_code() . "\r\n");
                         $client->write($headerStr . $headerSetCookieStr);
-                        $client->write("\r\n" . ob_get_contents());
+                        $client->write("\r\n" . $content);
 
                         ob_end_clean();
                     }
@@ -281,6 +405,7 @@ class MageWorker extends \Thread
                     appserver_session_init();
                 }
             } catch (\Exception $e) {
+                error_log($e->getMessage());
                 $client->write($e);
                 $client->close();
             }
@@ -293,12 +418,16 @@ require AUTOLOADER;
 
 // open server connection to www
 $serverConnection = StreamSocket::getServerInstance(
-    'tcp://0.0.0.0:9080'
+    'tcp://0.0.0.0:80'
 );
+
+$threads = isset($argv[1]) && (int)$argv[1] > 0 ? $argv[1] : DEFAULT_THREAD_NUM;
 
 // start mage workers
 $mageWorker = array();
-for ($i = 1; $i <= 12; $i++) {
+for ($i = 1; $i <= $threads; $i++) {
     echo "Starting MageWorker #$i" . PHP_EOL;
     $mageWorker[$i] = new MageWorker($serverConnection->getConnectionResource());
+    usleep(100000);
 }
+

@@ -21,7 +21,7 @@
 namespace magevm;
 
 define('BASEDIR', __DIR__ . DIRECTORY_SEPARATOR);
-define('AUTOLOADER', '/opt/appserver/app/code' . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php');
+define('AUTOLOADER', '/opt/appserver' . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php');
 
 use \TechDivision\Server\Sockets\StreamSocket;
 
@@ -74,13 +74,13 @@ class MageWorker extends \Thread
         $_SERVER                    = array();
         $_SERVER["REQUEST_URI"]     = "/index.php";
         $_SERVER["SCRIPT_NAME"]     = "/index.php";
-        $_SERVER["SCRIPT_FILENAME"] = "/var/www/magento/index.php";
+        $_SERVER["SCRIPT_FILENAME"] = "/var/www/magevm/index.php";
         $_SERVER["HTTP_HOST"]       = "magento.local:9080";
 
         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
 
         require AUTOLOADER;
-        require '/var/www/magento/app/Mage.php';
+        require '/var/www/magevm/app/Mage.php';
 
         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
 
@@ -213,7 +213,7 @@ class MageWorker extends \Thread
 
                     if (strpos($httpUri, '/index.php') === false) {
                         // output serving static content
-                        $client->copyStream(fopen('/var/www/magento' . $httpUri, 'r'));
+                        $client->copyStream(fopen('/var/www/magevm' . $httpUri, 'r'));
                     } else {
                         if ($httpMethod === 'POST') {
                             if (isset($headers['Content-Length'])) {

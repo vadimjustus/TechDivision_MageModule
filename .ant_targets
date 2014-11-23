@@ -1,0 +1,14 @@
+    clean
+    prepare
+    copy
+    deploy
+    apidoc
+    phpcs
+    phpcpd
+    phploc
+    pdepend
+    phpmd
+    copy-tests
+    run-tests
+    run-tests-in-runtime
+    build
