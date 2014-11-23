@@ -80,7 +80,7 @@ class MageWorker extends \Thread
         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
 
         require AUTOLOADER;
-        require '/var/www/magento/app/Mage.php';
+        require '/var/www/magevm/app/Mage.php';
 
         echo __METHOD__ . ':' . __LINE__ . PHP_EOL;
 
