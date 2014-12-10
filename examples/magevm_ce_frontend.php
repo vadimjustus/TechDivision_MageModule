@@ -65,7 +65,7 @@ for ($i = 1; $i <= $threads; $i++) {
     $worker->setPort(PORT);
     $worker->setName($name);
     $worker->setSessionContainer($session);
-    $worker->setSessionContainerMode(true);
+    $worker->setSessionContainerMode(false);
     $worker->setLogFile(LOGFILE);
     $worker->start(PTHREADS_INHERIT_ALL | PTHREADS_ALLOW_HEADERS);
 

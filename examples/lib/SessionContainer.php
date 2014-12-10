@@ -41,10 +41,10 @@ class SessionContainer extends \Stackable
      * @param string $id
      * @return null|array
      */
-    public function getData($id)
+    protected function getData($id)
     {
-        if (isset($this->data[$id])) {
-            return $this->data[$id];
+        if (isset($this[$id])) {
+            return $this[$id];
         }
         return null;
     }
@@ -53,8 +53,8 @@ class SessionContainer extends \Stackable
      * @param string $id
      * @param array $data
      */
-    public function setData($id, $data = array())
+    protected function setData($id, $data = array())
     {
-        $this->data[$id] = $data;
+        $this[$id] = $data;
     }
 }

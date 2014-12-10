@@ -472,7 +472,7 @@ class MageWorker extends \Thread
             session_id($_COOKIE['frontend']);
 
             if ($this->isSessionContainerMode()
-                && $sessionData = $this->sessionContainer->getData(session_id())
+                && $sessionData = $this->sessionContainer[session_id()]
             ) {
                 $_SESSION = $sessionData;
             }
@@ -617,7 +617,7 @@ class MageWorker extends \Thread
 
             if ($this->isSessionContainerMode() && isset($_SESSION)) {
                 $this->log(sprintf('Write session data to session handler with id %s.', session_id()));
-                $this->sessionContainer->setData(session_id(), $_SESSION);
+                $this->sessionContainer[session_id()] = $_SESSION;
             }
 
             ob_end_clean();
